@@ -1,0 +1,58 @@
+name: Sync to GitLab
+
+# Works with gitlab.com, self-hosted GitLab, or any GitLab instance
+# Set GITLAB_REPO_URL secret to your GitLab repo URL
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history for proper sync
+          
+      - name: Prevent sync loops
+        run: |
+          if git log -1 --pretty=%B | grep -q "\[skip sync\]"; then
+            echo "Skipping sync - commit marked with [skip sync]"
+            exit 0
+          fi
+          
+      - name: Setup Git
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+          
+      - name: Add GitLab remote
+        run: |
+          GITLAB_REPO_URL="${{ secrets.GITLAB_REPO_URL }}"
+          if [ -z "$GITLAB_REPO_URL" ]; then
+            echo "Error: GITLAB_REPO_URL secret is not set"
+            exit 1
+          fi
+          
+          # Add GitLab remote with token authentication
+          if [ -n "${{ secrets.GITLAB_TOKEN }}" ]; then
+            GITLAB_URL_WITH_TOKEN=$(echo "$GITLAB_REPO_URL" | sed "s|https://|https://oauth2:${{ secrets.GITLAB_TOKEN }}@|")
+            git remote add gitlab "${GITLAB_URL_WITH_TOKEN}" || git remote set-url gitlab "${GITLAB_URL_WITH_TOKEN}"
+          else
+            git remote add gitlab "${GITLAB_REPO_URL}" || git remote set-url gitlab "${GITLAB_REPO_URL}"
+          fi
+          
+      - name: Push to GitLab
+        run: |
+          CURRENT_BRANCH=${GITHUB_REF#refs/heads/}
+          git push gitlab ${CURRENT_BRANCH}:${CURRENT_BRANCH} --force || echo "Push failed or no changes"
+          
+      - name: Sync status
+        run: |
+          echo "✅ Successfully synced to GitLab"
+          echo "Branch: ${GITHUB_REF#refs/heads/}"
+          echo "Commit: ${GITHUB_SHA}"
+

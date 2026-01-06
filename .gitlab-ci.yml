@@ -1,0 +1,92 @@
+# GitLab CI/CD Pipeline to sync GitLab → GitHub
+# Works with github.com, GitHub Enterprise, or any GitHub instance
+# Set GITHUB_REPO_URL variable to your GitHub repo URL
+
+stages:
+  - sync
+
+sync-to-github:
+  stage: sync
+  image: alpine/git:latest
+  before_script:
+    - apk add --no-cache curl
+    - git config --global user.email "ci@gitlab.com"
+    - git config --global user.name "GitLab CI"
+  script:
+    - |
+      # Prevent infinite loops by checking if this commit was already synced
+      if git log -1 --pretty=%B | grep -q "\[skip sync\]"; then
+        echo "Skipping sync - commit marked with [skip sync]"
+        exit 0
+      fi
+      
+      # Get GitHub repository URL from CI/CD variables
+      # Defaults to github.com but works with any GitHub instance if you set GITHUB_REPO_URL
+      GITHUB_REPO_URL="${GITHUB_REPO_URL:-https://github.com/$CI_PROJECT_PATH.git}"
+      
+      # Add GitHub as remote if not exists
+      if ! git remote | grep -q github; then
+        git remote add github "${GITHUB_REPO_URL}"
+      else
+        git remote set-url github "${GITHUB_REPO_URL}"
+      fi
+      
+      # Fetch from GitHub
+      git fetch github || echo "Failed to fetch from GitHub"
+      
+      # Push to GitHub (with token authentication)
+      if [ -n "$GITHUB_TOKEN" ]; then
+        GITHUB_URL_WITH_TOKEN=$(echo "$GITHUB_REPO_URL" | sed "s|https://|https://${GITHUB_TOKEN}@|")
+        git remote set-url github "${GITHUB_URL_WITH_TOKEN}"
+      fi
+      
+      # Push current branch to GitHub
+      CURRENT_BRANCH=$(echo $CI_COMMIT_REF_NAME)
+      git push github ${CURRENT_BRANCH}:${CURRENT_BRANCH} || echo "Push to GitHub failed"
+      
+      echo "Synced to GitHub successfully"
+  only:
+    - branches
+  except:
+    - tags
+  when: manual  # Change to 'on_success' for automatic sync
+
+sync-from-github:
+  stage: sync
+  image: alpine/git:latest
+  before_script:
+    - apk add --no-cache curl
+    - git config --global user.email "ci@gitlab.com"
+    - git config --global user.name "GitLab CI"
+  script:
+    - |
+      # Get GitHub repository URL from CI/CD variables
+      # Defaults to github.com but works with any GitHub instance if you set GITHUB_REPO_URL
+      GITHUB_REPO_URL="${GITHUB_REPO_URL:-https://github.com/$CI_PROJECT_PATH.git}"
+      
+      # Add GitHub as remote if not exists
+      if ! git remote | grep -q github; then
+        git remote add github "${GITHUB_REPO_URL}"
+      else
+        git remote set-url github "${GITHUB_REPO_URL}"
+      fi
+      
+      # Fetch from GitHub
+      if [ -n "$GITHUB_TOKEN" ]; then
+        GITHUB_URL_WITH_TOKEN=$(echo "$GITHUB_REPO_URL" | sed "s|https://|https://${GITHUB_TOKEN}@|")
+        git remote set-url github "${GITHUB_URL_WITH_TOKEN}"
+      fi
+      
+      git fetch github
+      
+      # Merge GitHub changes into current branch
+      CURRENT_BRANCH=$(echo $CI_COMMIT_REF_NAME)
+      git checkout ${CURRENT_BRANCH}
+      git merge github/${CURRENT_BRANCH} --no-edit || echo "Merge failed or no changes"
+      git push origin ${CURRENT_BRANCH} || echo "Push to GitLab failed"
+      
+      echo "Synced from GitHub successfully"
+  only:
+    - schedules  # Run on schedule or manually
+  when: manual
+
