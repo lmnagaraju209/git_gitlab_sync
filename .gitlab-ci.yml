@@ -7,9 +7,9 @@ stages:
 
 sync-to-github:
   stage: sync
-  image: alpine/git:latest
+  image: alpine:latest
   before_script:
-    - apk add --no-cache curl
+    - apk add --no-cache git bash
     - git config --global user.email "ci@gitlab.com"
     - git config --global user.name "GitLab CI"
   script:
@@ -45,17 +45,15 @@ sync-to-github:
       git push github ${CURRENT_BRANCH}:${CURRENT_BRANCH} || echo "Push to GitHub failed"
       
       echo "Synced to GitHub successfully"
-  only:
-    - branches
-  except:
-    - tags
-  when: manual  # Change to 'on_success' for automatic sync
+  rules:
+    - if: $CI_COMMIT_BRANCH
+      when: manual  # Change to 'on_success' for automatic sync
 
 sync-from-github:
   stage: sync
-  image: alpine/git:latest
+  image: alpine:latest
   before_script:
-    - apk add --no-cache curl
+    - apk add --no-cache git bash
     - git config --global user.email "ci@gitlab.com"
     - git config --global user.name "GitLab CI"
   script:
@@ -86,7 +84,9 @@ sync-from-github:
       git push origin ${CURRENT_BRANCH} || echo "Push to GitLab failed"
       
       echo "Synced from GitHub successfully"
-  only:
-    - schedules  # Run on schedule or manually
-  when: manual
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
 
