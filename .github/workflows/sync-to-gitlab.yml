@@ -48,7 +48,35 @@ jobs:
       - name: Push to GitLab
         run: |
           CURRENT_BRANCH=${GITHUB_REF#refs/heads/}
-          git push gitlab ${CURRENT_BRANCH}:${CURRENT_BRANCH} --force || echo "Push failed or no changes"
+          
+          # Fetch from GitLab to check branch state (don't fail if branch doesn't exist)
+          git fetch gitlab 2>&1 || echo "Note: Could not fetch from GitLab (branch may not exist yet)"
+          
+          # Check if remote branch exists
+          if git ls-remote --heads gitlab ${CURRENT_BRANCH} | grep -q ${CURRENT_BRANCH}; then
+            # Remote branch exists - check if branches have diverged
+            git fetch gitlab ${CURRENT_BRANCH}:refs/remotes/gitlab/${CURRENT_BRANCH} 2>&1 || true
+            
+            # Check if GitLab branch is an ancestor of our branch (can fast-forward)
+            if git merge-base --is-ancestor refs/remotes/gitlab/${CURRENT_BRANCH} HEAD 2>/dev/null; then
+              # Safe to push - branches are compatible
+              echo "Pushing to GitLab (fast-forward compatible)..."
+              git push gitlab ${CURRENT_BRANCH}:${CURRENT_BRANCH}
+            else
+              # Branches have diverged - need to merge GitLab changes first
+              echo "Branches have diverged. Merging GitLab changes before push..."
+              git merge refs/remotes/gitlab/${CURRENT_BRANCH} --no-edit -m "Merge from GitLab [skip sync]" || {
+                echo "❌ Merge failed - branches have conflicting changes"
+                echo "Please resolve conflicts manually or sync GitLab changes to GitHub first"
+                exit 1
+              }
+              git push gitlab ${CURRENT_BRANCH}:${CURRENT_BRANCH}
+            fi
+          else
+            # Branch doesn't exist on GitLab - safe to push (creates new branch)
+            echo "Creating new branch ${CURRENT_BRANCH} on GitLab..."
+            git push gitlab ${CURRENT_BRANCH}:${CURRENT_BRANCH}
+          fi
           
       - name: Sync status
         run: |
