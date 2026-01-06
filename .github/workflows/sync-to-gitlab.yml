@@ -65,7 +65,7 @@ jobs:
             else
               # Branches have diverged - need to merge GitLab changes first
               echo "Branches have diverged. Merging GitLab changes before push..."
-              git merge refs/remotes/gitlab/${CURRENT_BRANCH} --no-edit -m "Merge from GitLab [skip sync]" || {
+              git merge refs/remotes/gitlab/${CURRENT_BRANCH} --allow-unrelated-histories --no-edit -m "Merge from GitLab [skip sync]" || {
                 echo "❌ Merge failed - branches have conflicting changes"
                 echo "Please resolve conflicts manually or sync GitLab changes to GitHub first"
                 exit 1
