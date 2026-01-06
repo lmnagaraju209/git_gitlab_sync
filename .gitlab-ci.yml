@@ -45,11 +45,9 @@ sync-to-github:
       git push github ${CURRENT_BRANCH}:${CURRENT_BRANCH} || echo "Push to GitHub failed"
       
       echo "Synced to GitHub successfully"
-  only:
-    - branches
-  except:
-    - tags
-  when: manual  # Change to 'on_success' for automatic sync
+  rules:
+    - if: $CI_COMMIT_BRANCH
+      when: manual  # Change to 'on_success' for automatic sync
 
 sync-from-github:
   stage: sync
@@ -86,7 +84,9 @@ sync-from-github:
       git push origin ${CURRENT_BRANCH} || echo "Push to GitLab failed"
       
       echo "Synced from GitHub successfully"
-  only:
-    - schedules  # Run on schedule or manually
-  when: manual
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
 
